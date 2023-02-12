@@ -3,6 +3,8 @@ import { it } from 'mocha';
 import { Database } from '../database';
 import { join } from 'path';
 
+process.env.NODE_ENV = 'test';
+
 describe('Database Header', () => {
   const testDbPath = join(__dirname, 'data', 'simple_table.db');
   let db: Database;
@@ -129,9 +131,8 @@ describe('Database Header', () => {
   });
 
   it('should have zeroed reserved space', () => {
-    expect(db.header.reservedSpace).to.be.a('string');
-    // 20 bytes
-    expect(db.header.reservedSpace.length).to.equal(20);
+    const twentyZeroBytes = Buffer.from(Array(20).fill(0));
+    expect(db.header.reservedSpace).to.deep.equal(twentyZeroBytes);
   });
 
   it('should have a valid version-valid-for number', () => {
