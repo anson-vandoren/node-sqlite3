@@ -76,6 +76,7 @@ export class DatabaseHeader {
   public applicationId: number;
   public versionValidFor: number;
   public sqliteVersionNumber: number;
+  private _magicString: string;
 
   constructor() {
     this.isValid = false;
@@ -102,14 +103,13 @@ export class DatabaseHeader {
     this.versionValidFor = -1;
     this.sqliteVersionNumber = -1;
     this.reservedSpace = Buffer.alloc(0);
+    this._magicString = "";
   }
 
   public static fromBuffer(buf: Buffer): DatabaseHeader {
     const header = new DatabaseHeader();
-    // TODO: other than magic string, what constitutes a valid header?
     const magicBytes = buf.subarray(HeaderOffset.MagicString, HeaderOffset.MagicString + HeaderSize.MagicString - 1); // -1 to exclude null terminator
-    const magicString = magicBytes.toString("utf8");
-    header.isValid = magicString === "SQLite format 3";
+    header._magicString = magicBytes.toString();
     header.pageSize = buf.readUInt16BE(HeaderOffset.PageSize);
     header.fileFormatWriteVersion = buf.readUInt8(HeaderOffset.FileFormatWriteVersion);
     header.fileFormatReadVersion = buf.readUInt8(HeaderOffset.FileFormatReadVersion);
@@ -133,7 +133,52 @@ export class DatabaseHeader {
     header.reservedSpace = buf.subarray(HeaderOffset.ReservedExpansion, HeaderOffset.ReservedExpansion + HeaderSize.ReservedExpansion);
     header.versionValidFor = buf.readUInt32BE(HeaderOffset.VersionValidFor);
     header.sqliteVersionNumber = buf.readUInt32BE(HeaderOffset.SqliteVersionNumber);
+    header.isValid = DatabaseHeader._isValid(header);
 
     return header;
+  }
+
+  private static _isValid(header: DatabaseHeader): boolean {
+    if (header._magicString !== "SQLite format 3") return false;
+
+    const validFileFormatVersions = [1, 2];
+    if (!validFileFormatVersions.includes(header.fileFormatWriteVersion)) return false;
+    if (!validFileFormatVersions.includes(header.fileFormatReadVersion)) return false;
+
+    if (header.reservedSpaceSize < 0) return false;
+
+    if (header.maxEmbeddedPayloadFraction !== 64) return false;
+    if (header.minEmbeddedPayloadFraction !== 32) return false;
+    if (header.leafPayloadFraction !== 32) return false;
+
+    if (header.fileChangeCounter < 0) return false;
+    if (header.databaseSizeInPages < 0) return false;
+    if (header.firstFreelistTrunkPage < 0) return false;
+    if (header.totalFreelistPages < 0) return false;
+    if (header.schemaCookie < 0) return false;
+    
+    const validSchemaFormatNumbers = [1, 2, 3, 4];
+    if (!validSchemaFormatNumbers.includes(header.schemaFormatNumber)) return false;
+
+    if (header.defaultPageCacheSize < 0) return false;
+    if (header.largestRootBTreePageNumber < 0) return false;
+
+    const validTextEncodings = [1, 2, 3];
+    if (!validTextEncodings.includes(header.textEncoding)) return false;
+
+    if (header.userVersion < 0) return false;
+    if (header.incrementalVacuumMode < 0) return false;
+    if (header.applicationId < 0) return false;
+
+    if (header.reservedSpace.length !== HeaderSize.ReservedExpansion) return false;
+    // must be all zeros
+    for (let i = 0; i < header.reservedSpace.length; i++) {
+      if (header.reservedSpace[i] !== 0) return false;
+    }
+
+    if (header.versionValidFor < 0) return false;
+    if (header.sqliteVersionNumber < 0) return false;
+
+    return true;
   }
 }
